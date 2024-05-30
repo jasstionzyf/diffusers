@@ -36,7 +36,6 @@ from diffusers import (
     StableDiffusionInpaintPipeline,
     UNet2DConditionModel,
 )
-from diffusers.models.attention_processor import AttnProcessor
 from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion_inpaint import prepare_mask_and_masked_image
 from diffusers.utils.testing_utils import (
     enable_full_determinism,
@@ -44,7 +43,6 @@ from diffusers.utils.testing_utils import (
     load_image,
     load_numpy,
     nightly,
-    numpy_cosine_similarity_distance,
     require_python39_or_higher,
     require_torch_2,
     require_torch_gpu,
@@ -388,6 +386,15 @@ class StableDiffusionInpaintPipelineFastTests(
         # they should be the same
         assert torch.allclose(intermediate_latent, output_interrupted, atol=1e-4)
 
+    def test_ip_adapter_single(self, from_simple=False, expected_pipe_slice=None):
+        if not from_simple:
+            expected_pipe_slice = None
+            if torch_device == "cpu":
+                expected_pipe_slice = np.array(
+                    [0.4390, 0.5452, 0.3772, 0.5448, 0.6031, 0.4480, 0.5194, 0.4687, 0.4640]
+                )
+        return super().test_ip_adapter_single(expected_pipe_slice=expected_pipe_slice)
+
 
 class StableDiffusionSimpleInpaintPipelineFastTests(StableDiffusionInpaintPipelineFastTests):
     pipeline_class = StableDiffusionInpaintPipeline
@@ -474,6 +481,12 @@ class StableDiffusionSimpleInpaintPipelineFastTests(StableDiffusionInpaintPipeli
             "output_type": "np",
         }
         return inputs
+
+    def test_ip_adapter_single(self):
+        expected_pipe_slice = None
+        if torch_device == "cpu":
+            expected_pipe_slice = np.array([0.6345, 0.5395, 0.5611, 0.5403, 0.5830, 0.5855, 0.5193, 0.5443, 0.5211])
+        return super().test_ip_adapter_single(from_simple=True, expected_pipe_slice=expected_pipe_slice)
 
     def test_stable_diffusion_inpaint(self):
         device = "cpu"  # ensure determinism for the device-dependent torch.Generator
@@ -771,77 +784,6 @@ class StableDiffusionInpaintPipelineSlowTests(unittest.TestCase):
         expected_slice = np.array([0.3757, 0.3875, 0.4445, 0.4353, 0.3780, 0.4513, 0.3965, 0.3984, 0.4362])
         assert np.abs(expected_slice - image_slice).max() < 1e-3
 
-    def test_download_local(self):
-        filename = hf_hub_download("runwayml/stable-diffusion-inpainting", filename="sd-v1-5-inpainting.ckpt")
-
-        pipe = StableDiffusionInpaintPipeline.from_single_file(filename, torch_dtype=torch.float16)
-        pipe.scheduler = DDIMScheduler.from_config(pipe.scheduler.config)
-        pipe.to("cuda")
-
-        inputs = self.get_inputs(torch_device)
-        inputs["num_inference_steps"] = 1
-        image_out = pipe(**inputs).images[0]
-
-        assert image_out.shape == (512, 512, 3)
-
-    def test_download_ckpt_diff_format_is_same(self):
-        ckpt_path = "https://huggingface.co/runwayml/stable-diffusion-inpainting/blob/main/sd-v1-5-inpainting.ckpt"
-
-        pipe = StableDiffusionInpaintPipeline.from_single_file(ckpt_path)
-        pipe.scheduler = DDIMScheduler.from_config(pipe.scheduler.config)
-        pipe.unet.set_attn_processor(AttnProcessor())
-        pipe.to("cuda")
-
-        inputs = self.get_inputs(torch_device)
-        inputs["num_inference_steps"] = 5
-        image_ckpt = pipe(**inputs).images[0]
-
-        pipe = StableDiffusionInpaintPipeline.from_pretrained("runwayml/stable-diffusion-inpainting")
-        pipe.scheduler = DDIMScheduler.from_config(pipe.scheduler.config)
-        pipe.unet.set_attn_processor(AttnProcessor())
-        pipe.to("cuda")
-
-        inputs = self.get_inputs(torch_device)
-        inputs["num_inference_steps"] = 5
-        image = pipe(**inputs).images[0]
-
-        max_diff = numpy_cosine_similarity_distance(image.flatten(), image_ckpt.flatten())
-
-        assert max_diff < 1e-4
-
-    def test_single_file_component_configs(self):
-        pipe = StableDiffusionInpaintPipeline.from_pretrained("runwayml/stable-diffusion-inpainting", variant="fp16")
-
-        ckpt_path = "https://huggingface.co/runwayml/stable-diffusion-inpainting/blob/main/sd-v1-5-inpainting.ckpt"
-        single_file_pipe = StableDiffusionInpaintPipeline.from_single_file(ckpt_path, load_safety_checker=True)
-
-        for param_name, param_value in single_file_pipe.text_encoder.config.to_dict().items():
-            if param_name in ["torch_dtype", "architectures", "_name_or_path"]:
-                continue
-            assert pipe.text_encoder.config.to_dict()[param_name] == param_value
-
-        PARAMS_TO_IGNORE = ["torch_dtype", "_name_or_path", "architectures", "_use_default_values"]
-        for param_name, param_value in single_file_pipe.unet.config.items():
-            if param_name in PARAMS_TO_IGNORE:
-                continue
-            assert (
-                pipe.unet.config[param_name] == param_value
-            ), f"{param_name} is differs between single file loading and pretrained loading"
-
-        for param_name, param_value in single_file_pipe.vae.config.items():
-            if param_name in PARAMS_TO_IGNORE:
-                continue
-            assert (
-                pipe.vae.config[param_name] == param_value
-            ), f"{param_name} is differs between single file loading and pretrained loading"
-
-        for param_name, param_value in single_file_pipe.safety_checker.config.to_dict().items():
-            if param_name in PARAMS_TO_IGNORE:
-                continue
-            assert (
-                pipe.safety_checker.config.to_dict()[param_name] == param_value
-            ), f"{param_name} is differs between single file loading and pretrained loading"
-
 
 @slow
 @require_torch_gpu
@@ -1067,13 +1009,15 @@ class StableDiffusionInpaintPipelineAsymmetricAutoencoderKLSlowTests(unittest.Te
 
         assert image_out.shape == (512, 512, 3)
 
-    def test_download_ckpt_diff_format_is_same(self):
-        pass
-
 
 @nightly
 @require_torch_gpu
 class StableDiffusionInpaintPipelineNightlyTests(unittest.TestCase):
+    def setUp(self):
+        super().setUp()
+        gc.collect()
+        torch.cuda.empty_cache()
+
     def tearDown(self):
         super().tearDown()
         gc.collect()

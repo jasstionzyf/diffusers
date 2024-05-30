@@ -201,7 +201,7 @@ def get_cached_module_file(
     module_file: str,
     cache_dir: Optional[Union[str, os.PathLike]] = None,
     force_download: bool = False,
-    resume_download: bool = False,
+    resume_download: Optional[bool] = None,
     proxies: Optional[Dict[str, str]] = None,
     token: Optional[Union[bool, str]] = None,
     revision: Optional[str] = None,
@@ -228,9 +228,9 @@ def get_cached_module_file(
             cache should not be used.
         force_download (`bool`, *optional*, defaults to `False`):
             Whether or not to force to (re-)download the configuration files and override the cached versions if they
-            exist.
-        resume_download (`bool`, *optional*, defaults to `False`):
-            Whether or not to delete incompletely received file. Attempts to resume the download if such a file exists.
+            exist. resume_download:
+                Deprecated and ignored. All downloads are now resumed by default when possible. Will be removed in v1
+                of Diffusers.
         proxies (`Dict[str, str]`, *optional*):
             A dictionary of proxy servers to use by protocol or endpoint, e.g., `{'http': 'foo.bar:3128',
             'http://hostname': 'foo.bar:4012'}.` The proxies are used on each request.
@@ -246,8 +246,8 @@ def get_cached_module_file(
 
     <Tip>
 
-    You may pass a token in `token` if you are not logged in (`huggingface-cli login`) and want to use private
-    or [gated models](https://huggingface.co/docs/hub/models-gated#gated-models).
+    You may pass a token in `token` if you are not logged in (`huggingface-cli login`) and want to use private or
+    [gated models](https://huggingface.co/docs/hub/models-gated#gated-models).
 
     </Tip>
 
@@ -329,6 +329,11 @@ def get_cached_module_file(
         # The only reason we do the copy is to avoid putting too many folders in sys.path.
         shutil.copy(resolved_module_file, submodule_path / module_file)
         for module_needed in modules_needed:
+            if len(module_needed.split(".")) == 2:
+                module_needed = "/".join(module_needed.split("."))
+                module_folder = module_needed.split("/")[0]
+                if not os.path.exists(submodule_path / module_folder):
+                    os.makedirs(submodule_path / module_folder)
             module_needed = f"{module_needed}.py"
             shutil.copy(os.path.join(pretrained_model_name_or_path, module_needed), submodule_path / module_needed)
     else:
@@ -343,9 +348,16 @@ def get_cached_module_file(
         create_dynamic_module(full_submodule)
 
         if not (submodule_path / module_file).exists():
+            if len(module_file.split("/")) == 2:
+                module_folder = module_file.split("/")[0]
+                if not os.path.exists(submodule_path / module_folder):
+                    os.makedirs(submodule_path / module_folder)
             shutil.copy(resolved_module_file, submodule_path / module_file)
+
         # Make sure we also have every file with relative
         for module_needed in modules_needed:
+            if len(module_needed.split(".")) == 2:
+                module_needed = "/".join(module_needed.split("."))
             if not (submodule_path / module_needed).exists():
                 get_cached_module_file(
                     pretrained_model_name_or_path,
@@ -368,7 +380,7 @@ def get_class_from_dynamic_module(
     class_name: Optional[str] = None,
     cache_dir: Optional[Union[str, os.PathLike]] = None,
     force_download: bool = False,
-    resume_download: bool = False,
+    resume_download: Optional[bool] = None,
     proxies: Optional[Dict[str, str]] = None,
     token: Optional[Union[bool, str]] = None,
     revision: Optional[str] = None,
@@ -405,8 +417,9 @@ def get_class_from_dynamic_module(
         force_download (`bool`, *optional*, defaults to `False`):
             Whether or not to force to (re-)download the configuration files and override the cached versions if they
             exist.
-        resume_download (`bool`, *optional*, defaults to `False`):
-            Whether or not to delete incompletely received file. Attempts to resume the download if such a file exists.
+        resume_download:
+            Deprecated and ignored. All downloads are now resumed by default when possible. Will be removed in v1 of
+            Diffusers.
         proxies (`Dict[str, str]`, *optional*):
             A dictionary of proxy servers to use by protocol or endpoint, e.g., `{'http': 'foo.bar:3128',
             'http://hostname': 'foo.bar:4012'}.` The proxies are used on each request.
@@ -422,8 +435,8 @@ def get_class_from_dynamic_module(
 
     <Tip>
 
-    You may pass a token in `token` if you are not logged in (`huggingface-cli login`) and want to use private
-    or [gated models](https://huggingface.co/docs/hub/models-gated#gated-models).
+    You may pass a token in `token` if you are not logged in (`huggingface-cli login`) and want to use private or
+    [gated models](https://huggingface.co/docs/hub/models-gated#gated-models).
 
     </Tip>
 

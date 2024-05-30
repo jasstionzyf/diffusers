@@ -31,7 +31,9 @@ if is_torch_available():
     _import_structure["autoencoders.autoencoder_kl_temporal_decoder"] = ["AutoencoderKLTemporalDecoder"]
     _import_structure["autoencoders.autoencoder_tiny"] = ["AutoencoderTiny"]
     _import_structure["autoencoders.consistency_decoder_vae"] = ["ConsistencyDecoderVAE"]
+    _import_structure["autoencoders.vq_model"] = ["VQModel"]
     _import_structure["controlnet"] = ["ControlNetModel"]
+    _import_structure["controlnet_xs"] = ["ControlNetXSAdapter", "UNetControlNetXSModel"]
     _import_structure["dual_transformer_2d"] = ["DualTransformer2DModel"]
     _import_structure["embeddings"] = ["ImageProjection"]
     _import_structure["modeling_utils"] = ["ModelMixin"]
@@ -49,7 +51,6 @@ if is_torch_available():
     _import_structure["unets.unet_spatio_temporal_condition"] = ["UNetSpatioTemporalConditionModel"]
     _import_structure["unets.unet_stable_cascade"] = ["StableCascadeUNet"]
     _import_structure["unets.uvit_2d"] = ["UVit2DModel"]
-    _import_structure["vq_model"] = ["VQModel"]
 
 if is_flax_available():
     _import_structure["controlnet_flax"] = ["FlaxControlNetModel"]
@@ -66,8 +67,10 @@ if TYPE_CHECKING or DIFFUSERS_SLOW_IMPORT:
             AutoencoderKLTemporalDecoder,
             AutoencoderTiny,
             ConsistencyDecoderVAE,
+            VQModel,
         )
         from .controlnet import ControlNetModel
+        from .controlnet_xs import ControlNetXSAdapter, UNetControlNetXSModel
         from .embeddings import ImageProjection
         from .modeling_utils import ModelMixin
         from .transformers import (
@@ -90,7 +93,6 @@ if TYPE_CHECKING or DIFFUSERS_SLOW_IMPORT:
             UNetSpatioTemporalConditionModel,
             UVit2DModel,
         )
-        from .vq_model import VQModel
 
     if is_flax_available():
         from .controlnet_flax import FlaxControlNetModel

@@ -282,15 +282,15 @@ class BasicTransformerBlock(nn.Module):
 
     def forward(
         self,
-        hidden_states: torch.FloatTensor,
-        attention_mask: Optional[torch.FloatTensor] = None,
-        encoder_hidden_states: Optional[torch.FloatTensor] = None,
-        encoder_attention_mask: Optional[torch.FloatTensor] = None,
+        hidden_states: torch.Tensor,
+        attention_mask: Optional[torch.Tensor] = None,
+        encoder_hidden_states: Optional[torch.Tensor] = None,
+        encoder_attention_mask: Optional[torch.Tensor] = None,
         timestep: Optional[torch.LongTensor] = None,
         cross_attention_kwargs: Dict[str, Any] = None,
         class_labels: Optional[torch.LongTensor] = None,
         added_cond_kwargs: Optional[Dict[str, torch.Tensor]] = None,
-    ) -> torch.FloatTensor:
+    ) -> torch.Tensor:
         if cross_attention_kwargs is not None:
             if cross_attention_kwargs.get("scale", None) is not None:
                 logger.warning("Passing `scale` to `cross_attention_kwargs` is deprecated. `scale` will be ignored.")
@@ -477,10 +477,10 @@ class TemporalBasicTransformerBlock(nn.Module):
 
     def forward(
         self,
-        hidden_states: torch.FloatTensor,
+        hidden_states: torch.Tensor,
         num_frames: int,
-        encoder_hidden_states: Optional[torch.FloatTensor] = None,
-    ) -> torch.FloatTensor:
+        encoder_hidden_states: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
         # Notice that normalization is always applied before the real computation in the following blocks.
         # 0. Self-Attention
         batch_size = hidden_states.shape[0]
@@ -634,7 +634,6 @@ class FeedForward(nn.Module):
         if inner_dim is None:
             inner_dim = int(dim * mult)
         dim_out = dim_out if dim_out is not None else dim
-        linear_cls = nn.Linear
 
         if activation_fn == "gelu":
             act_fn = GELU(dim, inner_dim, bias=bias)
@@ -651,7 +650,7 @@ class FeedForward(nn.Module):
         # project dropout
         self.net.append(nn.Dropout(dropout))
         # project out
-        self.net.append(linear_cls(inner_dim, dim_out, bias=bias))
+        self.net.append(nn.Linear(inner_dim, dim_out, bias=bias))
         # FF as used in Vision Transformer, MLP-Mixer, etc. have a final dropout
         if final_dropout:
             self.net.append(nn.Dropout(dropout))

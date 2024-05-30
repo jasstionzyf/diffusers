@@ -21,6 +21,7 @@ import math
 import os
 import random
 import shutil
+from contextlib import nullcontext
 from pathlib import Path
 
 import datasets
@@ -31,7 +32,7 @@ import torch.utils.checkpoint
 import transformers
 from accelerate import Accelerator
 from accelerate.logging import get_logger
-from accelerate.utils import DistributedDataParallelKwargs, ProjectConfiguration, set_seed
+from accelerate.utils import DistributedDataParallelKwargs, DistributedType, ProjectConfiguration, set_seed
 from datasets import load_dataset
 from huggingface_hub import create_repo, upload_folder
 from packaging import version
@@ -59,14 +60,16 @@ from diffusers.utils import (
     is_wandb_available,
 )
 from diffusers.utils.hub_utils import load_or_create_model_card, populate_model_card
-from diffusers.utils.import_utils import is_xformers_available
+from diffusers.utils.import_utils import is_torch_npu_available, is_xformers_available
 from diffusers.utils.torch_utils import is_compiled_module
 
 
 # Will error if the minimal version of diffusers is not installed. Remove at your own risks.
-check_min_version("0.28.0.dev0")
+check_min_version("0.29.0.dev0")
 
 logger = get_logger(__name__)
+if is_torch_npu_available():
+    torch.npu.config.allow_internal_format = False
 
 
 def save_model_card(
@@ -418,6 +421,9 @@ def parse_args(input_args=None):
     parser.add_argument(
         "--enable_xformers_memory_efficient_attention", action="store_true", help="Whether or not to use xformers."
     )
+    parser.add_argument(
+        "--enable_npu_flash_attention", action="store_true", help="Whether or not to use npu flash attention."
+    )
     parser.add_argument("--noise_offset", type=float, default=0, help="The scale of noise offset.")
     parser.add_argument(
         "--rank",
@@ -448,7 +454,7 @@ def parse_args(input_args=None):
 
 
 DATASET_NAME_MAPPING = {
-    "lambdalabs/pokemon-blip-captions": ("image", "text"),
+    "lambdalabs/naruto-blip-captions": ("image", "text"),
 }
 
 
@@ -500,6 +506,12 @@ def main(args):
         )
 
     logging_dir = Path(args.output_dir, args.logging_dir)
+
+    if torch.backends.mps.is_available() and args.mixed_precision == "bf16":
+        # due to pytorch#99272, MPS does not yet support bfloat16.
+        raise ValueError(
+            "Mixed precision training with bfloat16 is not supported on MPS. Please use fp16 (recommended) or fp32 instead."
+        )
 
     accelerator_project_config = ProjectConfiguration(project_dir=args.output_dir, logging_dir=logging_dir)
     kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
@@ -615,6 +627,13 @@ def main(args):
         vae.to(accelerator.device, dtype=weight_dtype)
     text_encoder_one.to(accelerator.device, dtype=weight_dtype)
     text_encoder_two.to(accelerator.device, dtype=weight_dtype)
+
+    if args.enable_npu_flash_attention:
+        if is_torch_npu_available():
+            logger.info("npu flash attention enabled.")
+            unet.enable_npu_flash_attention()
+        else:
+            raise ValueError("npu flash attention requires torch_npu extensions and is supported only on npu devices.")
 
     if args.enable_xformers_memory_efficient_attention:
         if is_xformers_available():
@@ -1142,7 +1161,8 @@ def main(args):
                 accelerator.log({"train_loss": train_loss}, step=global_step)
                 train_loss = 0.0
 
-                if accelerator.is_main_process:
+                # DeepSpeed requires saving weights on every device; saving weights only on the main process would cause issues.
+                if accelerator.distributed_type == DistributedType.DEEPSPEED or accelerator.is_main_process:
                     if global_step % args.checkpointing_steps == 0:
                         # _before_ saving state, check if this save would set us over the `checkpoints_total_limit`
                         if args.checkpoints_total_limit is not None:
@@ -1198,8 +1218,12 @@ def main(args):
                 # run inference
                 generator = torch.Generator(device=accelerator.device).manual_seed(args.seed) if args.seed else None
                 pipeline_args = {"prompt": args.validation_prompt}
+                if torch.backends.mps.is_available():
+                    autocast_ctx = nullcontext()
+                else:
+                    autocast_ctx = torch.autocast(accelerator.device.type)
 
-                with torch.cuda.amp.autocast():
+                with autocast_ctx:
                     images = [
                         pipeline(**pipeline_args, generator=generator).images[0]
                         for _ in range(args.num_validation_images)
