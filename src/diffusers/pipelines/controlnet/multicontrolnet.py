@@ -42,6 +42,7 @@ class MultiControlNetModel(ModelMixin):
         added_cond_kwargs: Optional[Dict[str, torch.Tensor]] = None,
         cross_attention_kwargs: Optional[Dict[str, Any]] = None,
         guess_mode: bool = False,
+        promptsMoreImportant: Optional[bool] = False,
         return_dict: bool = True,
     ) -> Union[ControlNetOutput, Tuple]:
         for i, (image, scale, controlnet) in enumerate(zip(controlnet_cond, conditioning_scale, self.nets)):
@@ -57,6 +58,8 @@ class MultiControlNetModel(ModelMixin):
                 added_cond_kwargs=added_cond_kwargs,
                 cross_attention_kwargs=cross_attention_kwargs,
                 guess_mode=guess_mode,
+                promptsMoreImportant=promptsMoreImportant,
+
                 return_dict=return_dict,
             )
 

@@ -925,6 +925,7 @@ class StableDiffusionControlNetPipeline(
         cross_attention_kwargs: Optional[Dict[str, Any]] = None,
         controlnet_conditioning_scale: Union[float, List[float]] = 1.0,
         guess_mode: bool = False,
+        promptsMoreImportant: bool = False,
         control_guidance_start: Union[float, List[float]] = 0.0,
         control_guidance_end: Union[float, List[float]] = 1.0,
         clip_skip: Optional[int] = None,
@@ -1274,6 +1275,7 @@ class StableDiffusionControlNetPipeline(
                     controlnet_cond=image,
                     conditioning_scale=cond_scale,
                     guess_mode=guess_mode,
+                    promptsMoreImportant=promptsMoreImportant,
                     return_dict=False,
                 )
 

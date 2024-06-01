@@ -674,6 +674,7 @@ class ControlNetModel(ModelMixin, ConfigMixin, FromOriginalModelMixin):
         timestep_cond: Optional[torch.Tensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
         added_cond_kwargs: Optional[Dict[str, torch.Tensor]] = None,
+        promptsMoreImportant: Optional[bool] = False,
         cross_attention_kwargs: Optional[Dict[str, Any]] = None,
         guess_mode: bool = False,
         return_dict: bool = True,
@@ -845,6 +846,11 @@ class ControlNetModel(ModelMixin, ConfigMixin, FromOriginalModelMixin):
         if guess_mode and not self.config.global_pool_conditions:
             scales = torch.logspace(-1, 0, len(down_block_res_samples) + 1, device=sample.device)  # 0.1 to 1.0
             scales = scales * conditioning_scale
+            down_block_res_samples = [sample * scale for sample, scale in zip(down_block_res_samples, scales)]
+            mid_block_res_sample = mid_block_res_sample * scales[-1]  # last one
+        
+        elif promptsMoreImportant and not self.config.global_pool_conditions:
+            scales = [conditioning_scale * (0.825 ** float(12-i)) for i in range(13)]
             down_block_res_samples = [sample * scale for sample, scale in zip(down_block_res_samples, scales)]
             mid_block_res_sample = mid_block_res_sample * scales[-1]  # last one
         else:
