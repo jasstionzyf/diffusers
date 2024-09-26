@@ -93,24 +93,20 @@ def get_parameter_device(parameter: torch.nn.Module) -> torch.device:
 
 def get_parameter_dtype(parameter: torch.nn.Module) -> torch.dtype:
     try:
-        params = tuple(parameter.parameters())
-        if len(params) > 0:
-            return params[0].dtype
-
-        buffers = tuple(parameter.buffers())
-        if len(buffers) > 0:
-            return buffers[0].dtype
-
+        return next(parameter.parameters()).dtype
     except StopIteration:
-        # For torch.nn.DataParallel compatibility in PyTorch 1.5
+        try:
+            return next(parameter.buffers()).dtype
+        except StopIteration:
+            # For torch.nn.DataParallel compatibility in PyTorch 1.5
 
-        def find_tensor_attributes(module: torch.nn.Module) -> List[Tuple[str, Tensor]]:
-            tuples = [(k, v) for k, v in module.__dict__.items() if torch.is_tensor(v)]
-            return tuples
+            def find_tensor_attributes(module: torch.nn.Module) -> List[Tuple[str, Tensor]]:
+                tuples = [(k, v) for k, v in module.__dict__.items() if torch.is_tensor(v)]
+                return tuples
 
-        gen = parameter._named_members(get_members_fn=find_tensor_attributes)
-        first_tuple = next(gen)
-        return first_tuple[1].dtype
+            gen = parameter._named_members(get_members_fn=find_tensor_attributes)
+            first_tuple = next(gen)
+            return first_tuple[1].dtype
 
 
 class ModelMixin(torch.nn.Module, PushToHubMixin):
@@ -773,7 +769,7 @@ class ModelMixin(torch.nn.Module, PushToHubMixin):
                     try:
                         accelerate.load_checkpoint_and_dispatch(
                             model,
-                            model_file if not is_sharded else sharded_ckpt_cached_folder,
+                            model_file if not is_sharded else index_file,
                             device_map,
                             max_memory=max_memory,
                             offload_folder=offload_folder,
@@ -803,7 +799,7 @@ class ModelMixin(torch.nn.Module, PushToHubMixin):
                             model._temp_convert_self_to_deprecated_attention_blocks()
                             accelerate.load_checkpoint_and_dispatch(
                                 model,
-                                model_file if not is_sharded else sharded_ckpt_cached_folder,
+                                model_file if not is_sharded else index_file,
                                 device_map,
                                 max_memory=max_memory,
                                 offload_folder=offload_folder,

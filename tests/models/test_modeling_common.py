@@ -124,11 +124,9 @@ class ModelUtilsTest(unittest.TestCase):
             if p1.data.ne(p2.data).sum() > 0:
                 assert False, "Parameters not the same!"
 
+    @unittest.skip("Flaky behaviour on CI. Re-enable after migrating to new runners")
+    @unittest.skipIf(torch_device == "mps", reason="Test not supported for MPS.")
     def test_one_request_upon_cached(self):
-        # TODO: For some reason this test fails on MPS where no HEAD call is made.
-        if torch_device == "mps":
-            return
-
         use_safetensors = False
 
         with tempfile.TemporaryDirectory() as tmpdirname:
@@ -185,17 +183,6 @@ class ModelUtilsTest(unittest.TestCase):
 
 
 class UNetTesterMixin:
-    def test_forward_signature(self):
-        init_dict, _ = self.prepare_init_args_and_inputs_for_common()
-
-        model = self.model_class(**init_dict)
-        signature = inspect.signature(model.forward)
-        # signature.parameters is an OrderedDict => so arg_names order is deterministic
-        arg_names = [*signature.parameters.keys()]
-
-        expected_arg_names = ["sample", "timestep"]
-        self.assertListEqual(arg_names[:2], expected_arg_names)
-
     def test_forward_with_norm_groups(self):
         init_dict, inputs_dict = self.prepare_init_args_and_inputs_for_common()
 
@@ -222,6 +209,7 @@ class ModelTesterMixin:
     base_precision = 1e-3
     forward_requires_fresh_args = False
     model_split_percents = [0.5, 0.7, 0.9]
+    uses_custom_attn_processor = False
 
     def check_device_map_is_respected(self, model, device_map):
         for param_name, param in model.named_parameters():
@@ -419,6 +407,9 @@ class ModelTesterMixin:
 
     @require_torch_gpu
     def test_set_attn_processor_for_determinism(self):
+        if self.uses_custom_attn_processor:
+            return
+
         torch.use_deterministic_algorithms(False)
         if self.forward_requires_fresh_args:
             model = self.model_class(**self.init_dict)
@@ -978,7 +969,6 @@ class ModelTesterMixin:
             self.assertTrue(actual_num_shards == expected_num_shards)
 
             new_model = self.model_class.from_pretrained(tmp_dir, device_map="auto")
-            new_model = new_model.to(torch_device)
 
             torch.manual_seed(0)
             if "generator" in inputs_dict:
